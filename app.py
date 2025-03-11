@@ -50,10 +50,28 @@ def gen(camera):
         frame = detections.person_detection(
             frame, is_async, is_det, is_reid, str(frame_id), show_track
         )
+
+        frame = draw_center_box(frame, box_size=250)
+        
         ret, jpeg = cv2.imencode(".jpg", frame)
         frame = jpeg.tobytes()
         yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n\r\n")
 
+def draw_center_box(frame, box_size=250):
+    """
+    Draws a yellow box of size box_size x box_size at the center of the frame.
+    """
+    # Get frame dimensions
+    frame_h, frame_w = frame.shape[:2]
+    # Calculate center coordinates
+    center_x = frame_w // 2
+    center_y = frame_h // 2
+    # Calculate top-left and bottom-right points of the box
+    top_left = (center_x - box_size // 2, center_y - box_size // 2)
+    bottom_right = (center_x + box_size // 2, center_y + box_size // 2)
+    # Draw a yellow rectangle (OpenCV uses BGR, so yellow is (0, 255, 255))
+    cv2.rectangle(frame, top_left, bottom_right, (0, 255, 255), 2)
+    return frame
 
 @app.route("/")
 def index():

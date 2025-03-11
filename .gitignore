@@ -71,6 +71,8 @@ docs/_build/
 # PyBuilder
 target/
 
+
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
@@ -80,6 +82,8 @@ ipython_config.py
 
 # pyenv
 .python-version
+
+videos/
 
 # celery beat schedule file
 celerybeat-schedule
@@ -93,6 +97,7 @@ celerybeat-schedule
 env/
 venv/
 ENV/
+person_reid_env/
 env.bak/
 venv.bak/
 

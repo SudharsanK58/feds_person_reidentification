@@ -21,6 +21,15 @@ class VideoCamera:
                 self.cap = cv2.VideoCapture(self.input_stream)
                 # for streaming
                 ##self.cap = cv2.VideoCapture("http://ipaddress:port/")
+
+        elif input.isdigit():
+            # Interpret this as a camera index
+            self.input_stream = int(input)
+            if v4l:
+                self.cap = cv2.VideoCapture(self.input_stream, cv2.CAP_V4L)
+            else:
+                self.cap = cv2.VideoCapture(self.input_stream)
+                
         else:
             self.input_stream = input
             assert os.path.isfile(input), "Specified input file doesn't exist"

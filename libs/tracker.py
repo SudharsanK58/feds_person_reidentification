@@ -13,6 +13,7 @@ from libs.utils import get_box_coordinates
 import pickle as pkl
 import configparser
 from scipy import stats
+from timeit import default_timer as timer
 
 from libs.kalman_filter import KalmanFilter
 
@@ -37,12 +38,24 @@ show_track = eval(config.get("TRACKER", "show_track"))
 green = eval(config.get("COLORS", "green"))
 skyblue = eval(config.get("COLORS", "skyblue"))
 red = eval(config.get("COLORS", "red"))
+light_green = eval(config.get("COLORS", "LIGHT_GREEN"))
 
 # track state
 TENTATIVE = 1
 CONFIRMED = 2
 DELETED = 3
 
+def is_inside_center_box(center, frame, box_size=250):
+    """
+    Checks if the given center point (x,y) is inside the center box of size box_size x box_size.
+    """
+    frame_h, frame_w = frame.shape[:2]
+    center_x = frame_w // 2
+    center_y = frame_h // 2
+    half_box = box_size // 2
+    top_left = (center_x - half_box, center_y - half_box)
+    bottom_right = (center_x + half_box, center_y + half_box)
+    return (top_left[0] <= center[0] <= bottom_right[0]) and (top_left[1] <= center[1] <= bottom_right[1])
 
 class Person:
     pass
@@ -106,6 +119,7 @@ class Tracker:
     def _next_id(self):
         self.person_id += 1
         return self.person_id
+
 
     def _set_grid(self, grid):
         # to counter person minimum grid need to be grater than or equal to  3
@@ -325,15 +339,36 @@ class Tracker:
         )
         return frame
 
-    def draw_reid_box(self, frame, track_id, box, conf, color):
 
+    def draw_reid_box(self, frame, track_id, box, conf, color):
         track = self.tracks[track_id]
 
+        # Get the current center from the latest tracked point.
         x = self.track_points[track_id][-1][0]
         y = self.track_points[track_id][-1][1]
-        if np.isnan(x) or np.isnan(y):
-            return frame
+        current_center = (x, y)
 
+        # Check if this track was already green-tagged.
+        if hasattr(track, 'green_tagged') and track.green_tagged:
+            color = green  # green imported from config
+        else:
+            # Not already green-tagged, so check if inside center box.
+            if is_inside_center_box(current_center, frame, box_size=250):
+                # If not already timing this, record the start time.
+                if not hasattr(track, 'center_inside_start') or track.center_inside_start is None:
+                    track.center_inside_start = timer()
+                elapsed = timer() - track.center_inside_start
+                if elapsed >= 5:
+                    color = green
+                    track.green_tagged = True  # Mark this track as green-tagged permanently
+                else:
+                    color = red
+            else:
+                # Person is not inside center box and hasn't been green-tagged yet.
+                track.center_inside_start = None
+                color = red
+
+        # Optionally, draw the ID near the current track point with the chosen color.
         cv2.putText(
             frame,
             str(track.person_id),
@@ -344,15 +379,11 @@ class Tracker:
             2,
         )
 
-        # if box is None:
-        #    return frame
-
         xmin, ymin, xmax, ymax = box
-        text = f"{track.person_id} {conf}"
+        text = f"ID: {track.person_id}"
         size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
-
-        # adjust reid box shape
         xtext = xmin + size[0][0] + 15
+
         cv2.rectangle(frame, (xmin, ymin - 22), (xtext, ymin), color, -1)
         cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), color, 1)
         cv2.rectangle(frame, (xmin, ymin - 22), (xtext, ymin), color)
@@ -365,7 +396,6 @@ class Tracker:
             (255, 255, 255),
             1,
         )
-
         return frame
 
     def draw_track_points(self, frame, track_points, color):
@@ -386,7 +416,7 @@ class Tracker:
         color = self.get_color(track.person_id)
 
         # Set similarity as confidence
-        conf = f"{round(confidence * 100, 1)}%" if confidence else "lost.."
+        conf = f"{track.person_id}" if confidence else "lost.."
 
         # Draw reid box
         frame = self.draw_reid_box(frame, track_id, box, conf, color)
