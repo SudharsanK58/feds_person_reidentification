@@ -1,180 +1,104 @@
-###############################################################################
-#
-# The MIT License (MIT)
-#
-# Copyright (c) 2014 Miguel Grinberg
-#
-# Released under the MIT license
-# https://github.com/miguelgrinberg/flask-video-streaming/blob/master/LICENSE
-#
-###############################################################################
-
-from flask import Flask, Response, render_template, request, jsonify
-from libs.camera import VideoCamera
-from logging import getLogger, basicConfig, DEBUG, INFO
-import os
-import sys
+import http.server
+import socketserver
 import cv2
-import json
+import os
+from libs.camera import VideoCamera
 from libs.interactive_detection import Detections
 from libs.argparser import build_argparser
-from openvino.inference_engine import get_version
 import configparser
 
-app = Flask(__name__)
-logger = getLogger(__name__)
-
+# Set up your configuration (as you did in your Flask code)
 config = configparser.ConfigParser()
 config.read("config.ini")
 
-
-# detection control flag
+# detection control flag and parameters
 is_async = eval(config.get("DEFAULT", "is_async"))
 is_det = eval(config.get("DEFAULT", "is_det"))
 is_reid = eval(config.get("DEFAULT", "is_reid"))
 show_track = eval(config.get("TRACKER", "show_track"))
-
-# 0:x-axis 1:y-axis -1:both axis
 flip_code = eval(config.get("DEFAULT", "flip_code"))
 resize_width = int(config.get("CAMERA", "resize_width"))
 
+# Build your camera and detections instances
+def setup():
+    args = build_argparser().parse_args()
+    camera = VideoCamera(args.input, resize_width, args.v4l)
+    devices = [args.device, args.device_reidentification]
+    detections = Detections(camera.frame, devices, args.grid)
+    return camera, detections
 
-def gen(camera):
+# Generator function to yield streaming frames
+def gen(camera, detections):
     frame_id = 0
     while True:
         frame_id += 1
         frame = camera.get_frame(flip_code)
         if frame is None:
-            logger.info("video finished. exit...")
+            print("Video finished. Exiting...")
             os._exit(0)
+        # Perform detection on the frame
         frame = detections.person_detection(
             frame, is_async, is_det, is_reid, str(frame_id), show_track
         )
-
+        # Draw the center box
         frame = draw_center_box(frame, box_size=250)
-        
-        ret, jpeg = cv2.imencode(".jpg", frame)
-        frame = jpeg.tobytes()
-        yield (b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n\r\n")
+        # Encode the frame in JPEG format
+        ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+        if not ret:
+            continue
+        frame_bytes = jpeg.tobytes()
+        # Build the multipart response
+        yield (b"--frame\r\n"
+               b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n\r\n")
 
 def draw_center_box(frame, box_size=250):
     """
     Draws a yellow box of size box_size x box_size at the center of the frame.
     """
-    # Get frame dimensions
     frame_h, frame_w = frame.shape[:2]
-    # Calculate center coordinates
     center_x = frame_w // 2
     center_y = frame_h // 2
-    # Calculate top-left and bottom-right points of the box
     top_left = (center_x - box_size // 2, center_y - box_size // 2)
     bottom_right = (center_x + box_size // 2, center_y + box_size // 2)
-    # Draw a yellow rectangle (OpenCV uses BGR, so yellow is (0, 255, 255))
     cv2.rectangle(frame, top_left, bottom_right, (0, 255, 255), 2)
     return frame
 
-@app.route("/")
-def index():
-    return render_template(
-        "index.html", is_async=is_async, flip_code=flip_code, enumerate=enumerate,
-    )
+# Custom HTTP request handler
+class StreamingHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/video_feed':
+            self.send_response(200)
+            self.send_header('Age', '0')
+            self.send_header('Cache-Control', 'no-cache, private')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
+            self.end_headers()
+            try:
+                for frame in gen(self.server.camera, self.server.detections):
+                    self.wfile.write(frame)
+            except Exception as e:
+                print("Client disconnected:", str(e))
+        else:
+            self.send_error(404)
+            self.end_headers()
 
+# Custom HTTP server that holds references to your camera and detections
+class StreamingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    def __init__(self, server_address, RequestHandlerClass, camera, detections):
+        super().__init__(server_address, RequestHandlerClass)
+        self.camera = camera
+        self.detections = detections
 
-@app.route("/video_feed")
-def video_feed():
-    return Response(gen(camera), mimetype="multipart/x-mixed-replace; boundary=frame")
+def run_server(port=8000):
+    camera, detections = setup()
+    server_address = ('', port)
+    httpd = StreamingServer(server_address, StreamingHandler, camera, detections)
+    print(f"Starting server on port {port}...")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down server.")
+        httpd.server_close()
 
-
-@app.route("/detection", methods=["POST"])
-def detection():
-    global is_async
-    global is_det
-    global is_reid
-    global show_track
-
-    command = request.json["command"]
-    if command == "async":
-        is_async = True
-    elif command == "sync":
-        is_async = False
-
-    if command == "person_det":
-        is_det = not is_det
-        is_reid = False
-    if command == "person_reid":
-        is_det = False
-        is_reid = not is_reid
-    if command == "show_track":
-        show_track = not show_track
-
-    result = {
-        "command": command,
-        "is_async": is_async,
-        "flip_code": flip_code,
-        "is_det": is_det,
-        "is_reid": is_reid,
-        "show_track": show_track,
-    }
-    logger.info(
-        f"command:{command} is_async:{is_async} flip_code:{flip_code} is_det:{is_det} is_reid:{is_reid} show_track:{show_track}"
-    )
-
-    return jsonify(ResultSet=json.dumps(result))
-
-
-@app.route("/flip", methods=["POST"])
-def flip_frame():
-    global flip_code
-
-    command = request.json["command"]
-
-    if command == "flip" and flip_code is None:
-        flip_code = 0
-    elif command == "flip" and flip_code == 0:
-        flip_code = 1
-    elif command == "flip" and flip_code == 1:
-        flip_code = -1
-    elif command == "flip" and flip_code == -1:
-        flip_code = None
-
-    # result = {"command": command, "is_async": is_async, "flip_code": flip_code}
-    result = {
-        "command": command,
-        "is_async": is_async,
-        "flip_code": flip_code,
-        "is_det": is_det,
-        "is_reid": {is_reid},
-    }
-    return jsonify(ResultSet=json.dumps(result))
-
-
-if __name__ == "__main__":
-
-    # arg parse
-    args = build_argparser().parse_args()
-    devices = [args.device, args.device_reidentification]
-
-    # logging
-    level = INFO
-    if args.verbose:
-        level = DEBUG
-
-    basicConfig(
-        filename="app.log",
-        filemode="w",
-        level=level,
-        format="%(asctime)s %(levelname)s %(name)s %(funcName)s:%(lineno)d %(message)s",
-    )
-
-    if 0 < args.grid < 3:
-        print("\nargument grid must be grater than 3")
-        sys.exit(1)
-
-    camera = VideoCamera(args.input, resize_width, args.v4l)
-    logger.info(
-        f"input:{args.input} v4l:{args.v4l} frame shape: {camera.frame.shape} grid:{args.grid}"
-    )
-    detections = Detections(camera.frame, devices, args.grid)
-
-    app.run(host="0.0.0.0", threaded=True)
-
+if __name__ == '__main__':
+    run_server()
