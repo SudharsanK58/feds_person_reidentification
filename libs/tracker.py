@@ -14,6 +14,8 @@ import pickle as pkl
 import configparser
 from scipy import stats
 from timeit import default_timer as timer
+import paho.mqtt.client as mqtt
+from threading import Thread
 
 from libs.kalman_filter import KalmanFilter
 
@@ -44,6 +46,52 @@ light_green = eval(config.get("COLORS", "LIGHT_GREEN"))
 TENTATIVE = 1
 CONFIRMED = 2
 DELETED = 3
+
+# Dictionary to track which IDs should be green
+green_tagged_ids = set()
+
+# MQTT Callbacks
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected to MQTT server with result code {rc}")
+    client.subscribe("hai/nfc")
+
+def on_message(client, userdata, msg):
+    global green_tagged_ids
+    data = msg.payload.decode().strip()
+
+    # Verify if the received data starts with "201"
+    if data.startswith("201"):
+        print(f"Received valid data: {data}")
+        
+        # Access the tracker instance correctly
+        tracker = userdata['tracker']
+
+        # Iterate through all active tracks
+        for track in tracker.tracks:
+            if track.stats == CONFIRMED:  # Only consider confirmed tracks
+                # Correctly retrieve the person's bounding box center
+                center = tracker.get_center(tracker.track_boxes[track.track_id][-1])
+
+                # Check if the detected person is inside the yellow box
+                if is_inside_center_box(center, tracker.frame, box_size=250):
+                    green_tagged_ids.add(track.person_id)
+                    print(f"Person ID {track.person_id} tagged as GREEN")
+                else:
+                    print(f"Person ID {track.person_id} is NOT inside the yellow box")
+
+
+
+# MQTT Initialization
+def start_mqtt(tracker):
+    mqtt_client = mqtt.Client(userdata={'tracker': tracker})
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
+    mqtt_client.connect("mqtt.zig-web.com", 1883, 60)
+
+    # Run MQTT in a separate thread so it doesn’t block the main loop
+    mqtt_thread = Thread(target=mqtt_client.loop_forever)
+    mqtt_thread.start()
+
 
 def is_inside_center_box(center, frame, box_size=250):
     """
@@ -92,6 +140,8 @@ class Track:
 class Tracker:
     def __init__(self, detector, frame, grid):
         # initialize tracker parameters
+        self.frame = frame  # Store the current frame for reference
+        start_mqtt(self)
         self.person_id_detector = detector
         self.frame_id = 0
         self.show_track = show_track
@@ -343,32 +393,15 @@ class Tracker:
     def draw_reid_box(self, frame, track_id, box, conf, color):
         track = self.tracks[track_id]
 
-        # Get the current center from the latest tracked point.
+        # If the track's ID is in the green_tagged_ids list, make it green
+        if track.person_id in green_tagged_ids:
+            color = green
+        else:
+            color = red
+
+        # Draw ID on the detected person
         x = self.track_points[track_id][-1][0]
         y = self.track_points[track_id][-1][1]
-        current_center = (x, y)
-
-        # Check if this track was already green-tagged.
-        if hasattr(track, 'green_tagged') and track.green_tagged:
-            color = green  # green imported from config
-        else:
-            # Not already green-tagged, so check if inside center box.
-            if is_inside_center_box(current_center, frame, box_size=250):
-                # If not already timing this, record the start time.
-                if not hasattr(track, 'center_inside_start') or track.center_inside_start is None:
-                    track.center_inside_start = timer()
-                elapsed = timer() - track.center_inside_start
-                if elapsed >= 5:
-                    color = green
-                    track.green_tagged = True  # Mark this track as green-tagged permanently
-                else:
-                    color = red
-            else:
-                # Person is not inside center box and hasn't been green-tagged yet.
-                track.center_inside_start = None
-                color = red
-
-        # Optionally, draw the ID near the current track point with the chosen color.
         cv2.putText(
             frame,
             str(track.person_id),
@@ -396,7 +429,9 @@ class Tracker:
             (255, 255, 255),
             1,
         )
+
         return frame
+
 
     def draw_track_points(self, frame, track_points, color):
         if self.show_track:
