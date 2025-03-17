@@ -53,7 +53,7 @@ green_tagged_ids = set()
 # MQTT Callbacks
 def on_connect(client, userdata, flags, rc):
     print(f"Connected to MQTT server with result code {rc}")
-    client.subscribe("hai/nfc")
+    client.subscribe("04:e9:e5:16:f7:1b/nfc")
 
 def on_message(client, userdata, msg):
     global green_tagged_ids
@@ -413,6 +413,7 @@ class Tracker:
         )
 
         xmin, ymin, xmax, ymax = box
+        ymax += 30
         text = f"ID: {track.person_id}"
         size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
         xtext = xmin + size[0][0] + 15
