@@ -1,126 +1,193 @@
-<!-- TOC -->
+# 📋 **Person Re-Identification Project Setup Guide**
 
-- [Person Re-identification with OpenVINO](#person-re-identification-with-openvino)
-  - [What's this](#whats-this)
-  - [Reference](#reference)
-    - [OpenVINO Toolkit and Flask Video streaming](#openvino-toolkit-and-flask-video-streaming)
-    - [OpenVINO Intel Model](#openvino-intel-model)
-  - [Tested Environment](#tested-environment)
-  - [Models](#models)
-  - [Required Python packages](#required-python-packages)
-  - [How to use](#how-to-use)
-  - [Run app](#run-app)
+This guide outlines the steps to set up the project on **Windows** and **Mac**.
 
-<!-- /TOC -->
+---
 
-# Person Re-identification with OpenVINO
+## ⚙️ **System Requirements**
 
-## What's this
+- **Python 3.9** (Recommended)
+- **OpenVINO** for deep learning inference
+- **Paho MQTT** for message communication
+- **DroidCam/Other IP Camera Apps** (For IP Camera support)
+- **GPU Recommended** (For better performance)
 
-This is Person Identification Test App using Intel OpenVINO Person Re-Identification Model.
+---
 
-* Person Detection
-* Person Re-Identification
+## 🖥️ **Windows Setup**
 
-**Person re-identifiction - Tracking - (YouTube Link)**
+### **Step 1: Install Python 3.9**
 
-<a href="https://youtu.be/mu_8jFkjRFk">
-<img src="https://raw.githubusercontent.com/wiki/kodamap/person_reidentification/images/TownCentre.gif" alt="TownCentre" width="%" height="auto"></a>
+1. Download Python 3.9 from the official website: [Download Python 3.9](https://www.python.org/downloads/release/python-390/)
+2. During installation:
+   - ✅ Check **Add Python 3.9 to PATH**
+   - ✅ Select **Customize installation** → Enable **"Install for all users"**
+3. Verify installation:
 
-**Person re-identifiction - Tracking - (YouTube Link)**
-
-<a href="https://youtu.be/j0AXqqnYZaY">
-<img src="https://raw.githubusercontent.com/wiki/kodamap/person_reidentification/images/mall2.gif" alt="mall2" width="%" height="auto"></a>
-
-
-## Reference
-
-### OpenVINO Toolkit and Flask Video streaming
-
-* [Install OpenVINO Toolkit](https://docs.openvinotoolkit.org/latest/index.html)
-* [Flask Video streaming](https://github.com/miguelgrinberg/flask-video-streaming)
-
-### OpenVINO Intel Model
-
-* [person-detection-retail-0013](https://github.com/openvinotoolkit/open_model_zoo/blob/master/models/intel/person-detection-retail-0013/description/person-detection-retail-0013.md)
-* [person-reidentification-retail-0031](https://github.com/openvinotoolkit/open_model_zoo/blob/2020.3/models/intel/person-reidentification-retail-0031/description/person-reidentification-retail-0031.md)
-
-
-## Tested Environment
-
-- Python 3.9.13
-- Windows 11 22H2
-- OpenVINO Toolkit 2022.1 ~ 2022.3
-
-[^1]: openvino.inference_engine version openvino_2020.1.033 or above build does not need cpu extension.
-      https://community.intel.com/t5/Intel-Distribution-of-OpenVINO/CPU-extension-file-missing/m-p/1177716
-      
-## Models
-
-```ini
-[MODELS]
-# Don't add a trailing slash
-model_path = model/intel
-model_det = person-detection-retail-0013
-model_reid = person-reidentification-retail-0031
+```bash
+python --version
 ```
 
-You can download models which you like.
+---
 
-See OpenVINO User Guide: [Model Downloader](https://docs.openvino.ai/2021.4/openvino_docs_IE_DG_Tools_Model_Downloader.html)
+### **Step 2: Install Dependencies**
 
+1. Navigate to the project folder:
 
-## Required Python packages
+```bash
+cd C:\feds_person_reidentification-main
+```
 
-```sh
+2. Create a virtual environment:
+
+```bash
+python -m venv person_reid_env
+```
+
+3. Activate the environment:
+
+```bash
+.\person_reid_env\Scripts\activate
+```
+
+4. Upgrade `pip` and install required libraries:
+
+```bash
+pip install --upgrade pip
 pip install -r requirements.txt
+pip install openvino==2022.3.0 paho-mqtt==1.6.1
 ```
 
-## How to use
+---
 
-```sh
-python app.py -h
-usage: app.py [-h] -i INPUT [-d {CPU,GPU,FPGA,MYRIAD}]
-              [-d_reid {CPU,GPU,FPGA,MYRIAD}] [--v4l] [-g GRID] [-v]
+### **Step 3: Enable PowerShell Script Execution (If Required)**
 
-optional arguments:
-  -h, --help            show this help message and exit
-  -i INPUT, --input INPUT
-                        Path to video file or image. 'cam' for capturing video
-                        stream from camera
-  -d {CPU,GPU,FPGA,MYRIAD}, --device {CPU,GPU,FPGA,MYRIAD}
-                        Specify the target device for Person Detection to
-                        infer on; CPU, GPU, FPGA or MYRIAD is acceptable.
-  -d_reid {CPU,GPU,FPGA,MYRIAD}, --device_reidentification {CPU,GPU,FPGA,MYRIAD}
-                        Specify the target device for person re-identificaiton
-                        to infer on; CPU, GPU, FPGA or MYRIAD is acceptable.
-  --v4l                 cv2.VideoCapture with cv2.CAP_V4L
-  -g GRID, --grid GRID  Specify how many grid to divide frame. This is used to
-                        define boundary area when the tracker counts person. 0
-                        ~ 2 means not counting person. (range: 3 < max_grid)
-  -v, --verbose         set logging level Debug
+If you encounter an error like `ExecutionPolicy Error`:
+
+1. Open **PowerShell as Administrator**.
+2. Run the following command:
+
+```powershell
+Set-ExecutionPolicy RemoteSigned
 ```
 
+---
 
-## Run app
+### **Step 4: Running the Project**
 
-**example1.** camera streaming without person counter 
+To start the project with the camera:
 
-```sh
-python app.py -i cam
+```bash
+python app.py -i cam --device_reidentification CPU
 ```
 
-**example2** Specify video file with person counter
+For IP camera:
 
-```py
-python app.py -i video\TownCentreXVID.mp4
+```bash
+python app.py -i "http://<YOUR-IP-CAMERA-URL>/video" --device_reidentification CPU
 ```
 
+For GPU acceleration:
 
-Access the url bellow on your browser
-
-```txt
-http://127.0.0.1:5000/
+```bash
+python app.py -i cam --device_reidentification GPU
 ```
 
-The log (app.log) is output to the current directory.
+---
+
+### **Step 5: Browser Access**
+
+- Open your browser and visit:
+
+```
+http://localhost:8000
+```
+
+---
+
+## 🍎 **Mac Setup**
+
+### **Step 1: Install Homebrew (if not already installed)**
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+### **Step 2: Install Python 3.9**
+
+```bash
+brew install python@3.9
+```
+
+### **Step 3: Create Virtual Environment**
+
+```bash
+python3.9 -m venv person_reid_env
+```
+
+### **Step 4: Activate Virtual Environment**
+
+```bash
+source person_reid_env/bin/activate
+```
+
+### **Step 5: Install Dependencies**
+
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install openvino==2022.3.0 paho-mqtt==1.6.1
+```
+
+### **Step 6: Running the Project**
+
+For webcam:
+
+```bash
+python app.py -i 0 --device_reidentification CPU
+```
+
+For IP camera:
+
+```bash
+python app.py -i "http://<YOUR-IP-CAMERA-URL>/video" --device_reidentification CPU
+```
+
+For GPU acceleration (If supported):
+
+```bash
+python app.py -i cam --device_reidentification GPU
+```
+
+---
+
+## 📰 **For IP Camera Setup**
+
+1. Install **DroidCam** (or any IP camera app) on your phone.
+2. Connect your phone to the same Wi-Fi network as your computer.
+3. Use the provided IP address in the command:
+
+```
+python app.py -i "http://192.168.0.131:4747/video" --device_reidentification CPU
+```
+
+---
+
+## 🚨 **Troubleshooting**
+
+1. **Error:** `ExecutionPolicy Error` (Windows)
+   - Run PowerShell as Admin → `Set-ExecutionPolicy RemoteSigned`
+2. **Error:** `OpenVINO Error`
+   - Ensure `openvino==2022.3.0` is correctly installed.
+
+---
+
+## 🎯 **Recommended Settings for Better Identification**
+
+- **Confidence Threshold**: Increase to `0.80` or `0.90` for improved accuracy.
+- **Tracking Threshold (`sim_thld`)**: Reduce to `0.40` for fast-moving objects.
+- **Bounding Box Size (`resize_width`)**: Increase for better visibility of distant objects.
+
+---
+
+If you face issues, feel free to ask! 🚀
